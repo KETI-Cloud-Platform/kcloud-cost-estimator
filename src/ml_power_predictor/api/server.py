@@ -60,6 +60,10 @@ class CostResponse(BaseModel):
     predicted_power_watts: float
     duration_hours: float
 
+@app.get("/healthz")
+def liveness_check():
+    return {"status": "ok"}
+
 @app.get("/health")
 def health_check():
     return {
@@ -106,9 +110,18 @@ def list_models():
     }
 
 @app.post("/api/v1/models/train_csv")
-def train_from_csv(csv_path: Optional[str] = Query(None, description="CSV 경로 (생략 시 perf_catalog_final.csv)")):
+def train_from_csv(csv_path: Optional[str] = Query(None, description="CSV 파일명 (예: data.csv)")):
     
-    result = _predictor.train_from_csv(Path(csv_path) if csv_path else None)
+    if csv_path:
+        # Prevent path traversal by allowing only filenames, no directories or ..
+        if os.path.isabs(csv_path) or ".." in csv_path or "/" in csv_path:
+            raise HTTPException(status_code=400, detail="유효하지 않은 파일 경로입니다. 파일명만 입력하세요.")
+        
+        path = Path(__file__).parents[1] / "data_pipeline" / csv_path
+    else:
+        path = None
+        
+    result = _predictor.train_from_csv(path)
     if "error" in result:
         raise HTTPException(status_code=422, detail=result["error"])
     return result
